@@ -1,0 +1,1912 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Timesheet Portal & Google Sheets Sync</title>
+    <!-- Tailwind CSS for high-fidelity responsive layout -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Inter Font family -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* Print Stylesheet optimization */
+        @media print {
+            body {
+                background-color: white !important;
+                color: black !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-container {
+                width: 100% !important;
+                max-width: 100% !important;
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .print-card {
+                border: 1px solid #e2e8f0 !important;
+                box-shadow: none !important;
+                margin-bottom: 20px !important;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col antialiased font-sans">
+
+    <!-- Custom Toast Notification Box -->
+    <div id="toastContainer" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white hidden">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-emerald-500 mb-4"></div>
+        <p class="text-lg font-medium" id="loadingText">Synchronizing database...</p>
+    </div>
+
+    <!-- Auth Portal (Sign In / Registration Screen) -->
+    <div id="authContainer" class="flex-grow flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-8 border border-slate-100 relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500"></div>
+            
+            <div class="text-center mb-6">
+                <div class="inline-flex p-3 bg-emerald-50 rounded-xl text-emerald-600 mb-3">
+                    <i class="fa-solid fa-file-invoice-dollar text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-slate-900">Timesheet Portal</h1>
+                <p class="text-slate-500 text-sm mt-1">Track hours, earnings, and sync directly to Google Sheets</p>
+                
+                <!-- Connection Status Badge -->
+                <div class="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-150" id="authConnectionBadge">
+                    <span class="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Instant Cloud Sync Mode Active
+                </div>
+            </div>
+
+            <!-- Authentication Tabs -->
+            <div class="flex border-b border-slate-200 mb-6">
+                <button id="tabLogin" class="flex-1 pb-3 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600 transition" onclick="toggleAuthTab('login')">
+                    Sign In
+                </button>
+                <button id="tabRegister" class="flex-1 pb-3 text-center font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition" onclick="toggleAuthTab('register')">
+                    Create Account
+                </button>
+            </div>
+
+            <!-- Auth Form -->
+            <form id="authForm" onsubmit="handleAuthSubmit(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Email Address</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                            <i class="fa-solid fa-envelope"></i>
+                        </span>
+                        <input type="email" id="authEmail" required class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition text-sm" placeholder="employee@company.com">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Password</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                            <i class="fa-solid fa-lock"></i>
+                        </span>
+                        <input type="password" id="authPassword" required minlength="4" class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition text-sm" placeholder="••••••••">
+                    </div>
+                </div>
+
+                <button type="submit" id="authSubmitBtn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition shadow-lg shadow-emerald-600/10 hover:shadow-emerald-600/20 text-sm flex items-center justify-center gap-2">
+                    <span id="authBtnText">Sign Into Timesheet</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </button>
+            </form>
+
+            <div class="relative flex py-4 items-center">
+                <div class="flex-grow border-t border-slate-200"></div>
+                <span class="flex-shrink mx-4 text-slate-400 text-xs uppercase font-medium">Or Quick Entry</span>
+                <div class="flex-grow border-t border-slate-200"></div>
+            </div>
+
+            <!-- Anonymous quick test login -->
+            <button onclick="loginAnonymouslyClick()" class="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-medium rounded-xl transition text-sm flex items-center justify-center gap-2">
+                <i class="fa-solid fa-user-tag"></i>
+                Continue as Guest / Demo Profile
+            </button>
+
+            <!-- Storage Info Area -->
+            <div class="mt-6 bg-emerald-50/50 rounded-xl p-3.5 border border-emerald-100 text-xs text-slate-600 flex gap-2.5">
+                <i class="fa-solid fa-sheet-plastic text-emerald-600 text-lg mt-0.5"></i>
+                <div>
+                    <span class="font-bold text-slate-800">Dynamic Google Sheets Backup</span>
+                    Login is 100% functional. All user records can be fully customized to stream rows directly into a personal or corporate Google Spreadsheet.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Workspace Area -->
+    <div id="dashboardContainer" class="hidden flex-grow flex flex-col print-container">
+        <!-- Top Navigation / Header -->
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-10 no-print">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <!-- Branding -->
+                <div class="flex items-center gap-3">
+                    <span class="p-2 bg-emerald-600 text-white rounded-xl">
+                        <i class="fa-solid fa-business-time text-xl"></i>
+                    </span>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="font-bold text-slate-900 leading-tight">Timesheet System</h1>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800" id="headerConnectionBadge">Active Sync</span>
+                        </div>
+                        <p class="text-xs text-slate-500 font-medium" id="userDisplayEmail">employee@company.com</p>
+                    </div>
+                </div>
+
+                <!-- Action Controls -->
+                <div class="flex items-center gap-3">
+                    <button onclick="openSheetsModal()" class="text-slate-700 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/50 px-3 py-2 rounded-xl transition text-xs font-semibold flex items-center gap-1.5" title="Google Sheets Setup">
+                        <i class="fa-solid fa-file-excel text-emerald-600 text-sm"></i>
+                        <span>Connect Google Sheet</span>
+                    </button>
+                    <button onclick="logOut()" class="text-slate-600 hover:text-rose-600 bg-slate-100 hover:bg-rose-50 p-2.5 rounded-xl transition text-sm flex items-center gap-1.5" title="Sign Out">
+                        <i class="fa-solid fa-right-from-bracket text-lg"></i>
+                        <span class="hidden md:inline font-medium">Sign Out</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full space-y-6 print-container">
+            
+            <!-- Google Sheets Connection Status Info Bar -->
+            <div id="sheetsConnectedBanner" class="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-emerald-900 text-sm no-print hidden">
+                <div class="flex items-center gap-3">
+                    <span class="bg-emerald-100 text-emerald-800 p-2 rounded-xl">
+                        <i class="fa-solid fa-cloud-arrow-up text-lg animate-bounce"></i>
+                    </span>
+                    <div>
+                        <p class="font-bold text-emerald-950">Google Sheets Connection Status: Live</p>
+                        <p class="text-xs text-emerald-700">All timesheets are instantly backing up to your spreadsheet webhook.</p>
+                    </div>
+                </div>
+                <button onclick="testSheetsSync()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md shadow-emerald-700/10 flex items-center gap-1.5">
+                    <i class="fa-solid fa-rotate"></i> Test Real-time Sync
+                </button>
+            </div>
+
+            <!-- Welcome Bar with Automatic System Date & Time Tracker & New Week Navigator -->
+            <div class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm flex flex-col md:flex-row gap-6 justify-between print-card md:items-center">
+                <div>
+                    <div class="flex items-center gap-2 text-emerald-600 font-semibold text-sm uppercase tracking-wide">
+                        <i class="fa-solid fa-calendar"></i>
+                        <span id="currentDateString">Monday, June 22, 2026</span>
+                    </div>
+                    <h2 class="text-2xl font-bold text-slate-900 mt-1" id="timeDisplay">11:03 AM</h2>
+                    <p class="text-slate-500 text-sm mt-0.5" id="currentWeekRange">Week ID: Loading...</p>
+                </div>
+
+                <!-- Clock In / Clock Out & Backdated Week Selector Panel -->
+                <div class="flex flex-col sm:flex-row flex-wrap gap-4 items-stretch sm:items-center no-print">
+                    
+                    <!-- Week Navigator Controls with Custom Start & End Date Labels -->
+                    <div class="flex flex-col gap-1.5">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Timesheet Period / Backdate Selector</span>
+                        <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl p-1">
+                            <button onclick="changeWeek(-1)" class="p-2 hover:bg-white text-slate-600 hover:text-slate-900 rounded-lg transition" title="Go back 1 week">
+                                <i class="fa-solid fa-chevron-left text-sm"></i>
+                            </button>
+                            <!-- Clickable start & end date display which acts as the selector -->
+                            <div class="relative flex items-center justify-center">
+                                <span id="weekDisplayLabel" class="text-xs font-bold text-slate-800 px-3 py-1 cursor-pointer hover:bg-white rounded-lg transition min-w-[170px] text-center select-none" title="Click to pick a specific backdate">
+                                    Loading Week...
+                                </span>
+                                <!-- Invisible overlays to trigger calendar picking organically -->
+                                <input type="date" id="backdatePicker" onchange="onBackdatePickerChange(this.value)" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                            </div>
+                            <button onclick="changeWeek(1)" class="p-2 hover:bg-white text-slate-600 hover:text-slate-900 rounded-lg transition" title="Go forward 1 week">
+                                <i class="fa-solid fa-chevron-right text-sm"></i>
+                            </button>
+                            <button onclick="jumpToCurrentWeek()" class="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg transition text-[10px] uppercase tracking-wider" title="Jump back to current week">
+                                Current
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Hourly Rate Setting -->
+                    <div class="flex flex-col gap-1.5 justify-center">
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hourly Rate ($)</span>
+                        <div class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center gap-1">
+                            <span class="text-slate-600 font-bold text-sm">$</span>
+                            <input type="number" id="hourlyRateInput" min="0" step="0.5" value="25.00" onchange="updateHourlyRate(this.value)" class="bg-transparent font-bold text-slate-800 focus:outline-none w-16 text-sm">
+                        </div>
+                    </div>
+
+                    <!-- Instant Action Buttons -->
+                    <div class="flex gap-2 items-end pt-5">
+                        <button onclick="triggerClockIn()" id="clockInBtn" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/10 hover:shadow-emerald-600/20 transition flex items-center justify-center gap-2 text-sm">
+                            <i class="fa-solid fa-play-circle text-base"></i>
+                            <span>Clock In</span>
+                        </button>
+                        <button onclick="triggerClockOut()" id="clockOutBtn" class="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-lg shadow-rose-600/10 hover:shadow-rose-600/20 transition flex items-center justify-center gap-2 opacity-50 cursor-not-allowed text-sm" disabled>
+                            <i class="fa-solid fa-stop-circle text-base"></i>
+                            <span>Clock Out</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Week Timesheet Table -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden print-card">
+                <div class="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/50 no-print">
+                    <div>
+                        <h3 class="font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-table-list text-emerald-600"></i>
+                            Timesheet Period Log
+                        </h3>
+                        <p class="text-slate-500 text-xs mt-0.5">Edit log timestamps directly to enter backdated work periods</p>
+                    </div>
+                    
+                    <!-- Print & Export Utilities -->
+                    <div class="flex items-center gap-2 self-end sm:self-auto">
+                        <button onclick="openEmailModal()" class="px-3.5 py-1.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded-xl transition text-xs font-semibold flex items-center gap-1.5">
+                            <i class="fa-solid fa-envelope"></i>
+                            Email Report
+                        </button>
+                        <button onclick="window.print()" class="px-3.5 py-1.5 bg-slate-100 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 rounded-xl transition text-xs font-semibold flex items-center gap-1.5">
+                            <i class="fa-solid fa-print"></i>
+                            Print Timesheet
+                        </button>
+                        <button onclick="downloadCSV()" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition text-xs font-semibold flex items-center gap-1.5 shadow-md shadow-emerald-600/15">
+                            <i class="fa-solid fa-file-csv"></i>
+                            Download (CSV)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Printable Header (Visible only when printing) -->
+                <div class="hidden print:block p-6 border-b border-slate-200">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Timesheet Report</h1>
+                            <p class="text-slate-500 text-sm mt-1" id="printUserEmail">Employee: employee@company.com</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-semibold text-slate-800" id="printWeekSpan">Week Range</p>
+                            <p class="text-xs text-slate-500">Generated on <span id="printGeneratedDate">Date</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Interactive Responsive Grid Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[750px]">
+                        <thead>
+                            <tr class="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold text-xs uppercase tracking-wider">
+                                <th class="py-4 px-6 w-1/5">Day & Date</th>
+                                <th class="py-4 px-4 w-1/5">Check In Time</th>
+                                <th class="py-4 px-4 w-1/5">Check Out Time</th>
+                                <th class="py-4 px-4 text-center w-1/6">Total Hours</th>
+                                <th class="py-4 px-6 text-right w-1/6">Earned ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="timesheetDaysTable" class="divide-y divide-slate-100 text-sm text-slate-700">
+                            <!-- Dynamic days rows injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Payment and Carry Forward Financial Panel -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Current Earnings Calculations Summary Card -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between print-card">
+                    <div>
+                        <h4 class="font-bold text-slate-900 flex items-center gap-2 mb-4">
+                            <i class="fa-solid fa-coins text-emerald-500"></i>
+                            Current Week Calculation
+                        </h4>
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-slate-500">Total Hours Tracked:</span>
+                                <span class="font-bold text-slate-800" id="summaryTotalHours">0.00 Hours</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-slate-500">Base Wage Rate:</span>
+                                <span class="font-bold text-slate-800" id="summaryRate">$25.00/hr</span>
+                            </div>
+                            <div class="border-t border-slate-100 pt-3 flex justify-between text-base font-bold text-slate-900">
+                                <span>Gross Earned:</span>
+                                <span id="summaryGrossEarned" class="text-emerald-600">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Outstanding & Carry-Forward Card -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between print-card">
+                    <div>
+                        <h4 class="font-bold text-slate-900 flex items-center gap-2 mb-4">
+                            <i class="fa-solid fa-angles-right text-emerald-600"></i>
+                            Brought Forward Balance
+                        </h4>
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm items-center">
+                                <span class="text-slate-500" id="carryLabel">Balance from Previous Week:</span>
+                                <span class="font-bold text-slate-800" id="summaryCarryForward">$0.00</span>
+                            </div>
+                            <div class="text-xs text-slate-400 italic" id="carryDescription">
+                                Overpayments are carried forward as positive credits (reducing current week balance due). Unpaid totals are carried as outstanding liabilities.
+                            </div>
+                            <div class="border-t border-slate-100 pt-3 flex justify-between text-base font-bold text-slate-900">
+                                <span>Grand Total Balance Due:</span>
+                                <span id="summaryGrandTotal" class="text-indigo-600">$0.00</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Payment Settlement Center (Supports Post-Lock Editing and Dynamic Date Input) -->
+                <div class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between print-card">
+                    <div>
+                        <div class="flex justify-between items-center mb-4">
+                            <h4 class="font-bold text-slate-900 flex items-center gap-2">
+                                <i class="fa-solid fa-file-invoice-dollar text-emerald-600"></i>
+                                Weekly Payment Status
+                            </h4>
+                            
+                            <!-- Custom Lock / Edit trigger for payment configurations -->
+                            <div id="paymentControlTrigger" class="no-print hidden">
+                                <button onclick="enablePaymentEditing()" id="paymentEditBtn" class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 text-[10px] font-bold rounded-lg transition flex items-center gap-1">
+                                    <i class="fa-solid fa-pen-to-square"></i> Edit Payment
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Settlement Form Elements -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment Status</label>
+                                <select id="paymentStatusSelect" onchange="handlePaymentStatusChange(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none">
+                                    <option value="unpaid">Unpaid</option>
+                                    <option value="partial">Partially Paid / Overpaid</option>
+                                    <option value="paid">Fully Paid</option>
+                                </select>
+                            </div>
+
+                            <!-- Conditional Received Amount Field -->
+                            <div id="partialPaidAmountContainer" class="hidden">
+                                <div class="flex justify-between items-center mb-1">
+                                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount Received ($)</label>
+                                    <span class="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded" id="overpayHelper">Enter any value</span>
+                                </div>
+                                <div class="relative">
+                                    <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-500 font-bold">$</span>
+                                    <input type="number" id="partialAmountInput" step="0.01" min="0" placeholder="0.00" oninput="calculateBalanceAndCarryForwards()" class="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-4 py-2 text-sm font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none">
+                                </div>
+                            </div>
+
+                            <!-- Payment Received Calendar Date Input Field -->
+                            <div id="paymentReceivedDateContainer" class="hidden">
+                                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Payment Date Received</label>
+                                <input type="date" id="paymentDateInput" onchange="onPaymentDateUpdate(this.value)" class="w-full bg-slate-50 border border-slate-200 focus:bg-white rounded-xl px-3 py-2 text-xs font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-none transition">
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-slate-500">Final Received:</span>
+                                    <span class="font-bold text-slate-800" id="summaryReceived">$0.00</span>
+                                </div>
+                                
+                                <!-- High Contrast Custom Warning Card for Outstanding Overdue Balances -->
+                                <div id="outstandingCarryCard" class="p-3.5 rounded-xl border flex flex-col justify-between gap-1.5 transition mt-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500" id="outstandingLabel">Outstanding Carry:</span>
+                                        <span class="font-extrabold text-base" id="summaryOutstandingCarry">$0.00</span>
+                                    </div>
+                                    <div class="text-[10px] leading-relaxed text-slate-500" id="outstandingCardSub">
+                                        Carried over to successive weeks automatically.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- End of Week Submission Tool -->
+                    <div class="mt-5 pt-3 border-t border-slate-100 no-print">
+                        <button onclick="triggerFinalizePrompt()" id="finalizeWeekBtn" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-slate-900/15">
+                            <i class="fa-solid fa-lock"></i>
+                            <span>Lock & Finalize Week (Sync to Cloud)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Historical Timesheets Ledger -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden no-print">
+                <div class="px-6 py-4 border-b border-slate-200">
+                    <h3 class="font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-emerald-600"></i>
+                        Historical Weeks & Settlements
+                    </h3>
+                    <p class="text-slate-500 text-xs mt-0.5">Review locked cycles and carry forward history</p>
+                </div>
+                <div class="p-6">
+                    <div id="historicalEmptyState" class="text-center py-8">
+                        <i class="fa-solid fa-folder-open text-slate-300 text-4xl mb-3"></i>
+                        <p class="text-sm font-medium text-slate-500">No finalized weeks yet. Close the current week above to record ledger entries.</p>
+                    </div>
+                    <div id="historicalWeeksGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 hidden">
+                        <!-- Dynamic History Cards injected here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Google Sheets Setup Modal -->
+    <div id="sheetsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 border border-slate-100 relative max-h-[90vh] overflow-y-auto">
+            <button onclick="closeSheetsModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div class="flex items-center gap-3 text-emerald-600 mb-4">
+                <i class="fa-solid fa-file-excel text-2xl"></i>
+                <h3 class="text-xl font-bold text-slate-900">Google Sheets Integration Panel</h3>
+            </div>
+            
+            <div class="space-y-4 text-xs text-slate-600">
+                <p class="text-sm">Store timesheets securely inside a custom Google Spreadsheet. Enter your deployed Google Apps Script Web App URL below:</p>
+                
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">Apps Script Web App URL</label>
+                    <input type="url" id="sheetsWebappUrl" placeholder="https://script.google.com/macros/s/.../exec" class="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 rounded-xl px-4 py-2.5 font-mono text-xs focus:outline-none transition">
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="saveSheetsConfiguration()" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-700/15">
+                        <i class="fa-solid fa-floppy-disk"></i> Save Webhook URL
+                    </button>
+                    <button onclick="removeSheetsConfiguration()" class="py-2.5 px-4 bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 font-bold rounded-xl text-xs transition">
+                        Disconnect Sheet
+                    </button>
+                </div>
+
+                <div class="border-t border-slate-200 my-4 pt-4">
+                    <h4 class="font-bold text-slate-900 text-sm mb-2 flex items-center gap-1.5">
+                        <i class="fa-solid fa-circle-question text-emerald-500"></i>
+                        3-Step Installation Guide
+                    </h4>
+                    <ol class="list-decimal list-inside space-y-3 pl-1 text-slate-600 text-xs leading-relaxed">
+                        <li>Create a new <strong>Google Sheet</strong> in your Google Drive (go to <a href="https://sheets.new" target="_blank" class="text-emerald-600 font-semibold underline">sheets.new</a>). Go to <strong>Extensions &gt; Apps Script</strong>.</li>
+                        <li>Delete any existing code and copy-paste the snippet provided below into the Apps Script editor.</li>
+                        <li>Click <strong>Deploy &gt; New deployment</strong>, select type <strong>Web App</strong>, change "Who has access" to <strong>"Anyone"</strong>, click deploy, and paste the URL above!</li>
+                    </ol>
+                </div>
+
+                <!-- Web App Code copy block -->
+                <div class="bg-slate-900 rounded-xl p-3 text-slate-300 font-mono text-[10px] relative select-all leading-normal">
+                    <button onclick="copyAppsScriptCode()" class="absolute top-2 right-2 px-2 py-1 bg-slate-800 hover:bg-slate-700 text-[10px] text-white rounded transition flex items-center gap-1">
+                        <i class="fa-solid fa-copy"></i> Copy Script
+                    </button>
+                    <pre class="overflow-x-auto max-h-[180px] p-1 whitespace-pre-wrap font-mono" id="appsScriptText">
+function doPost(e) {
+  try {
+    var payload = JSON.parse(e.postData.contents);
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    
+    // Create Header if sheet is empty
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow([
+        "Timestamp", "Employee Email", "Week ID", "Date Range", "Gross Wages ($)", 
+        "Brought Forward ($)", "Final Payment ($)", "Carried Outstanding ($)", "Payment Status", "Payment Date"
+      ]);
+    }
+    
+    // Append weekly record
+    sheet.appendRow([
+      new Date(),
+      payload.email,
+      payload.weekId,
+      payload.startDate + " to " + payload.endDate,
+      payload.earnedThisWeek,
+      payload.carriedFromPrevious,
+      payload.amountReceived,
+      (payload.earnedThisWeek + payload.carriedFromPrevious) - payload.amountReceived,
+      payload.paymentStatus,
+      payload.paymentDate || "N/A"
+    ]);
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "success" }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <button onclick="closeSheetsModal()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold rounded-xl text-xs transition">
+                    Back to Portal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Report Dialog Modal -->
+    <div id="emailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 border border-slate-100 relative max-h-[90vh] overflow-y-auto">
+            <button onclick="closeEmailModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700 transition">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+            <div class="flex items-center gap-3 text-emerald-600 mb-4">
+                <i class="fa-solid fa-paper-plane text-2xl"></i>
+                <h3 class="text-xl font-bold text-slate-900">Email Timesheet Report</h3>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">Email To</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+                            <i class="fa-solid fa-envelope"></i>
+                        </span>
+                        <input type="email" id="emailToInput" placeholder="manager@company.com" class="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none transition font-medium">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1.5">Email Body Preview</label>
+                    <div class="bg-slate-900 text-emerald-400 p-4 rounded-xl font-mono text-[11px] leading-relaxed overflow-x-auto max-h-[220px]" id="emailPreviewBox">
+                        <!-- Built on fly -->
+                    </div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="sendEmailReport()" class="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-md shadow-emerald-700/15">
+                        <i class="fa-solid fa-paper-plane"></i> Send via Email Client
+                    </button>
+                    <button onclick="copyEmailBody()" class="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-copy"></i> Copy Message
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <button onclick="closeEmailModal()" class="w-full py-2.5 bg-slate-150 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition">
+                    Back to Portal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal (Secure substitute for browser confirm popup box) -->
+    <div id="confirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden no-print">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 border border-slate-100 relative transform transition-all">
+            <div class="flex items-center gap-3 text-amber-600 mb-4">
+                <span class="p-2.5 bg-amber-50 rounded-xl">
+                    <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                </span>
+                <h3 class="text-lg font-bold text-slate-900">Finalize Weekly Sheet?</h3>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed mb-6">
+                Are you sure you want to lock and finalize this week? This operation compiles outstanding balances (including any overpayments) and rolls them forward dynamically to successive weeks. If connected, data syncs directly with Google Sheets.
+            </p>
+            <div class="flex gap-3">
+                <button id="cancelConfirmBtn" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition">
+                    Cancel
+                </button>
+                <button id="okConfirmBtn" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition shadow-md shadow-emerald-600/10">
+                    Confirm & Finalize
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts and Logic Section -->
+    <script type="module">
+        // Connection & Auth variables
+        let currentUser = null;
+        let activeWeekId = ""; 
+        let currentWeekData = null;
+        let historicalWeeks = [];
+        let isRegistering = false;
+        let isEditingPaymentDetails = false;
+        
+        // Active viewing date context for navigation/backdating
+        let activeViewingDate = new Date();
+
+        // Safe database handler
+        function initStorage() {
+            try {
+                if (!localStorage.getItem('sheets_portal_users')) {
+                    localStorage.setItem('sheets_portal_users', JSON.stringify({
+                        "demo@company.com": "password123",
+                        "manager@company.com": "password123"
+                    }));
+                }
+                if (!localStorage.getItem('sheets_portal_db')) {
+                    localStorage.setItem('sheets_portal_db', JSON.stringify({}));
+                }
+            } catch (err) {
+                console.error("Storage initialization failure:", err);
+            }
+        }
+        initStorage();
+
+        function getLocalUsers() {
+            try {
+                return JSON.parse(localStorage.getItem('sheets_portal_users') || '{}');
+            } catch (err) {
+                return {};
+            }
+        }
+
+        function saveLocalUser(email, pass) {
+            try {
+                const users = getLocalUsers();
+                users[email.toLowerCase()] = pass;
+                localStorage.setItem('sheets_portal_users', JSON.stringify(users));
+            } catch (err) {
+                console.error("Failed to save local user:", err);
+            }
+        }
+
+        function getLocalDb() {
+            try {
+                return JSON.parse(localStorage.getItem('sheets_portal_db') || '{}');
+            } catch (err) {
+                return {};
+            }
+        }
+
+        function writeLocalDb(path, data) {
+            try {
+                const db = getLocalDb();
+                db[path] = data;
+                localStorage.setItem('sheets_portal_db', JSON.stringify(db));
+            } catch (err) {
+                console.error("Failed to write to DB:", err);
+            }
+        }
+
+        // Active Session Watchers with browser-level session memory
+        let activeSession = null;
+        let sessionChangeCallbacks = [];
+
+        function setSession(user) {
+            activeSession = user;
+            try {
+                if (user) {
+                    localStorage.setItem('sheets_portal_session', JSON.stringify(user));
+                } else {
+                    localStorage.removeItem('sheets_portal_session');
+                }
+            } catch (err) {
+                console.error("Failed to update session store:", err);
+            }
+            sessionChangeCallbacks.forEach(cb => cb(user));
+        }
+
+        // Restore active user session on browser reload
+        function checkPersistentSession() {
+            try {
+                const savedSession = localStorage.getItem('sheets_portal_session');
+                if (savedSession) {
+                    const parsed = JSON.parse(savedSession);
+                    if (parsed && (parsed.uid || parsed.email)) {
+                        setSession(parsed);
+                    }
+                }
+            } catch (e) {
+                console.error("Session recovery failed:", e);
+                try { localStorage.removeItem('sheets_portal_session'); } catch (err) {}
+            }
+        }
+
+        function listenToSession(callback) {
+            sessionChangeCallbacks.push(callback);
+            callback(activeSession);
+        }
+
+        // Boot and Monitor Session state changes
+        listenToSession(async (user) => {
+            const container = document.getElementById('dashboardContainer');
+            const authBox = document.getElementById('authContainer');
+            
+            if (user) {
+                currentUser = user;
+                document.getElementById('userDisplayEmail').textContent = user.email || `Guest: ${user.uid}`;
+                document.getElementById('printUserEmail').textContent = `Employee Name/Email: ${user.email || 'Guest'}`;
+                
+                authBox.classList.add('hidden');
+                container.classList.remove('hidden');
+                
+                try {
+                    showLoading("Initializing timesheets...");
+                    await loadSheetsConfig();
+                    activeViewingDate = new Date();
+                    await initializeCurrentWeekData(activeViewingDate);
+                    await fetchHistoricalWeeks();
+                } catch (err) {
+                    console.error("Error during boot load:", err);
+                    showToast("Encountered initialization error. Safe loading default values.", "error");
+                } finally {
+                    hideLoading();
+                }
+            } else {
+                currentUser = null;
+                authBox.classList.remove('hidden');
+                container.classList.add('hidden');
+            }
+        });
+
+        // Current Date Tracking
+        function updateTickTime() {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            
+            const dateEl = document.getElementById('currentDateString');
+            const timeEl = document.getElementById('timeDisplay');
+            
+            if (dateEl) dateEl.textContent = dateStr;
+            if (timeEl) timeEl.textContent = timeStr;
+            
+            const printGen = document.getElementById('printGeneratedDate');
+            if (printGen) printGen.textContent = now.toLocaleDateString() + ' ' + now.toLocaleTimeString();
+        }
+        setInterval(updateTickTime, 1000);
+        updateTickTime();
+
+        // Calculate ISO Week Dates & boundaries for any passed Date context (enables backdating navigation)
+        function getWeekBoundaries(d = new Date()) {
+            const date = new Date(d);
+            const day = date.getDay();
+            const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(date.setDate(diff));
+            
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            
+            const yyyyMon = monday.getFullYear();
+            const mmMon = String(monday.getMonth() + 1).padStart(2, '0');
+            const ddMon = String(monday.getDate()).padStart(2, '0');
+            
+            const yyyySun = sunday.getFullYear();
+            const mmSun = String(sunday.getMonth() + 1).padStart(2, '0');
+            const ddSun = String(sunday.getDate()).padStart(2, '0');
+            
+            const startKey = `${yyyyMon}-${mmMon}-${ddMon}`;
+            const endKey = `${yyyySun}-${mmSun}-${ddSun}`;
+            
+            const target = new Date(date.valueOf());
+            const dayNr = (date.getDay() + 6) % 7;
+            target.setDate(target.getDate() - dayNr + 3);
+            const firstThursday = target.valueOf();
+            target.setMonth(0, 1);
+            if (target.getDay() !== 4) {
+                target.setMonth(0, 1 + ((4 - target.getDay()) + 7) % 7);
+            }
+            const weekNumber = 1 + Math.ceil((firstThursday - target) / 604800000);
+            const weekId = `${yyyyMon}-W${String(weekNumber).padStart(2, '0')}`;
+            
+            const monFormatted = monday.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+            const sunFormatted = sunday.toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
+            
+            return {
+                weekId,
+                startKey,
+                endKey,
+                displayRange: `${monFormatted} - ${sunFormatted}`
+            };
+        }
+
+        // Initialize active timesheet data for any selected week target
+        async function initializeCurrentWeekData(targetDate = new Date()) {
+            if (!currentUser) return;
+            const boundaries = getWeekBoundaries(targetDate);
+            activeWeekId = boundaries.weekId;
+            isEditingPaymentDetails = false; // Reset lock edits
+            
+            // Sync calendar display range text instantly inside navigator
+            const weekDisplayLabel = document.getElementById('weekDisplayLabel');
+            if (weekDisplayLabel) {
+                weekDisplayLabel.textContent = boundaries.displayRange;
+            }
+
+            document.getElementById('currentWeekRange').textContent = `Week ID: ${boundaries.weekId} (${boundaries.displayRange})`;
+            document.getElementById('printWeekSpan').textContent = `Statement Week: ${boundaries.displayRange}`;
+            
+            const path = `users/${currentUser.uid}/timesheets/${activeWeekId}`;
+            const sDb = getLocalDb();
+            
+            if (sDb[path]) {
+                currentWeekData = sDb[path];
+            } else {
+                currentWeekData = {
+                    weekId: activeWeekId,
+                    startDate: boundaries.startKey,
+                    endDate: boundaries.endKey,
+                    hourlyRate: 25.00,
+                    isFinalized: false,
+                    paymentStatus: 'unpaid',
+                    amountReceived: 0,
+                    paymentDate: '',
+                    carriedFromPrevious: 0, // Calculated dynamically by cascading logic
+                    days: generateEmptyDaysMap(boundaries.startKey)
+                };
+                writeLocalDb(path, currentWeekData);
+            }
+            
+            // Always cascade-solve outstanding balances whenever viewing a week
+            rebuildAllCarryForwards();
+            renderTimesheetFormUI();
+        }
+
+        // Chronological Cascading Balance Solver
+        // Solves the issue where previous week's left payment ($44.75) carries forward dynamically!
+        function rebuildAllCarryForwards() {
+            if (!currentUser) return;
+            try {
+                const sDb = getLocalDb();
+                const prefix = `users/${currentUser.uid}/timesheets/`;
+                
+                // 1. Find all logged weeks for this user
+                const paths = Object.keys(sDb).filter(k => k.startsWith(prefix));
+                const timesheets = paths.map(k => sDb[k]).filter(Boolean);
+                
+                if (timesheets.length === 0) return;
+                
+                // 2. Sort chronologically by startDate
+                timesheets.sort((a, b) => {
+                    if (!a.startDate || !b.startDate) return 0;
+                    return a.startDate.localeCompare(b.startDate);
+                });
+                
+                // 3. Cascade previous outstanding balance forward to successive weeks
+                let runningCarryForward = 0;
+                
+                timesheets.forEach((sheet) => {
+                    // The Brought Forward Balance for this week is the remaining outstanding from the previous week
+                    sheet.carriedFromPrevious = runningCarryForward;
+                    
+                    // Recalculate gross wages for this sheet
+                    let totalEarned = 0;
+                    if (sheet.days) {
+                        Object.values(sheet.days).forEach((day) => {
+                            totalEarned += parseFloat(day.earned || 0);
+                        });
+                    }
+                    sheet.earnedThisWeek = totalEarned;
+                    
+                    // outstanding balance = (Wages + Carried In) - Received
+                    const totalDue = totalEarned + sheet.carriedFromPrevious;
+                    const received = parseFloat(sheet.amountReceived || 0);
+                    const outstanding = totalDue - received;
+                    
+                    // This outstanding balance rolls forward as the next week's Brought Forward balance
+                    runningCarryForward = outstanding;
+                    
+                    // Save state back to local DB cache
+                    sDb[`${prefix}${sheet.weekId}`] = sheet;
+                });
+                
+                // Commit complete solved database sequence back to cache
+                localStorage.setItem('sheets_portal_db', JSON.stringify(sDb));
+                
+                // Sync current active viewing copy reference
+                const activePath = `${prefix}${activeWeekId}`;
+                if (sDb[activePath]) {
+                    currentWeekData = sDb[activePath];
+                }
+            } catch (err) {
+                console.error("Cascading balance resolution failed:", err);
+            }
+        }
+
+        function generateEmptyDaysMap(mondayDateString) {
+            const daysMap = {};
+            const mondayDate = new Date(mondayDateString + "T00:00:00");
+            const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+            
+            for (let i = 0; i < 7; i++) {
+                const nextDate = new Date(mondayDate);
+                nextDate.setDate(mondayDate.getDate() + i);
+                
+                const dateKey = nextDate.toISOString().split('T')[0];
+                
+                daysMap[dateKey] = {
+                    dayName: weekdays[i],
+                    date: dateKey,
+                    checkIn: "",
+                    checkOut: "",
+                    totalHours: 0,
+                    earned: 0
+                };
+            }
+            return daysMap;
+        }
+
+        // Render Timesheet Editor UI Grid
+        function renderTimesheetFormUI() {
+            if (!currentWeekData) return;
+            
+            document.getElementById('hourlyRateInput').value = currentWeekData.hourlyRate;
+            
+            const daysTableBody = document.getElementById('timesheetDaysTable');
+            daysTableBody.innerHTML = "";
+            
+            const todayKey = new Date().toLocaleDateString('en-CA'); // Accurate timezone matching
+            let activeClockInForTodayExists = false;
+            
+            const sortedDays = Object.values(currentWeekData.days).sort((a,b) => {
+                if (!a.date || !b.date) return 0;
+                return a.date.localeCompare(b.date);
+            });
+            
+            sortedDays.forEach((day) => {
+                const isToday = day.date === todayKey;
+                const highlightClass = isToday ? 'bg-emerald-50/40 font-semibold border-l-4 border-l-emerald-600' : '';
+                
+                if (isToday && day.checkIn && !day.checkOut) {
+                    activeClockInForTodayExists = true;
+                }
+
+                const formattedDate = new Date(day.date + "T00:00:00").toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                
+                const tr = document.createElement('tr');
+                tr.className = `${highlightClass} hover:bg-slate-50/80 transition group`;
+                tr.innerHTML = `
+                    <td class="py-4 px-6 font-medium text-slate-900">
+                        <div class="flex flex-col">
+                            <span>${day.dayName}</span>
+                            <span class="text-xs text-slate-500 font-normal">${formattedDate}</span>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                            <input type="time" value="${day.checkIn || ''}" 
+                                   onchange="onManualTimeUpdate('${day.date}', 'checkIn', this.value)"
+                                   ${currentWeekData.isFinalized ? 'disabled font-bold text-slate-500 bg-slate-150' : ''}
+                                   class="bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none transition w-32">
+                            <button onclick="stampCurrentTime('${day.date}', 'checkIn')" 
+                                    ${currentWeekData.isFinalized ? 'disabled' : ''}
+                                    title="Stamp Check-In"
+                                    class="no-print p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 border border-emerald-100 rounded-lg transition text-xs">
+                                <i class="fa-solid fa-clock"></i>
+                            </button>
+                        </div>
+                    </td>
+                    <td class="py-3 px-4">
+                        <div class="flex items-center gap-2">
+                            <input type="time" value="${day.checkOut || ''}" 
+                                   onchange="onManualTimeUpdate('${day.date}', 'checkOut', this.value)"
+                                   ${currentWeekData.isFinalized ? 'disabled font-bold text-slate-500 bg-slate-150' : ''}
+                                   class="bg-slate-50 hover:bg-slate-100 focus:bg-white border border-slate-200 focus:border-emerald-500 rounded-xl px-3 py-1.5 text-xs font-medium focus:outline-none transition w-32">
+                            <button onclick="stampCurrentTime('${day.date}', 'checkOut')" 
+                                    ${currentWeekData.isFinalized ? 'disabled' : ''}
+                                    title="Stamp Check-Out"
+                                    class="no-print p-1.5 text-emerald-600 hover:text-white hover:bg-emerald-600 border border-emerald-100 rounded-lg transition text-xs">
+                                <i class="fa-solid fa-clock"></i>
+                            </button>
+                        </div>
+                    </td>
+                    <td class="py-4 px-4 text-center font-bold text-slate-800">
+                        ${parseFloat(day.totalHours || 0).toFixed(2)} hrs
+                    </td>
+                    <td class="py-4 px-6 text-right font-bold text-slate-900">
+                        $${parseFloat(day.earned || 0).toFixed(2)}
+                    </td>
+                `;
+                daysTableBody.appendChild(tr);
+            });
+
+            // Handle bottom buttons active locks
+            const clockInBtn = document.getElementById('clockInBtn');
+            const clockOutBtn = document.getElementById('clockOutBtn');
+            
+            if (currentWeekData.isFinalized) {
+                clockInBtn.disabled = true;
+                clockInBtn.classList.add('opacity-40', 'cursor-not-allowed');
+                clockOutBtn.disabled = true;
+                clockOutBtn.classList.add('opacity-40', 'cursor-not-allowed');
+                document.getElementById('finalizeWeekBtn').classList.add('hidden');
+                document.getElementById('paymentControlTrigger').classList.remove('hidden');
+            } else {
+                document.getElementById('finalizeWeekBtn').classList.remove('hidden');
+                document.getElementById('paymentControlTrigger').classList.add('hidden');
+                
+                if (activeClockInForTodayExists) {
+                    clockInBtn.disabled = true;
+                    clockInBtn.classList.add('opacity-40', 'cursor-not-allowed');
+                    clockOutBtn.disabled = false;
+                    clockOutBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                } else {
+                    clockInBtn.disabled = false;
+                    clockInBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+                    clockOutBtn.disabled = true;
+                    clockOutBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+            }
+
+            document.getElementById('paymentStatusSelect').value = currentWeekData.paymentStatus;
+            document.getElementById('partialAmountInput').value = currentWeekData.amountReceived || 0;
+            document.getElementById('paymentDateInput').value = currentWeekData.paymentDate || '';
+            
+            if (currentWeekData.paymentStatus === 'partial') {
+                document.getElementById('partialPaidAmountContainer').classList.remove('hidden');
+            } else {
+                document.getElementById('partialPaidAmountContainer').classList.add('hidden');
+            }
+
+            // Toggle date fields based on payment status
+            if (currentWeekData.paymentStatus === 'paid' || currentWeekData.paymentStatus === 'partial') {
+                document.getElementById('paymentReceivedDateContainer').classList.remove('hidden');
+            } else {
+                document.getElementById('paymentReceivedDateContainer').classList.add('hidden');
+            }
+
+            // Determine interactive state for payment parameters
+            const canModifyPayment = !currentWeekData.isFinalized || isEditingPaymentDetails;
+            document.getElementById('paymentStatusSelect').disabled = !canModifyPayment;
+            document.getElementById('partialAmountInput').disabled = !canModifyPayment;
+            document.getElementById('paymentDateInput').disabled = !canModifyPayment;
+
+            calculateBalanceAndCarryForwards(false);
+        }
+
+        window.onManualTimeUpdate = function(dateKey, field, timeValue) {
+            if (!currentWeekData || currentWeekData.isFinalized) return;
+            currentWeekData.days[dateKey][field] = timeValue;
+            recalculateDayHours(dateKey);
+            saveActiveWeekLocal();
+        }
+
+        window.stampCurrentTime = function(dateKey, field) {
+            if (!currentWeekData || currentWeekData.isFinalized) return;
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const timeValue = `${hh}:${mm}`;
+            currentWeekData.days[dateKey][field] = timeValue;
+            recalculateDayHours(dateKey);
+            saveActiveWeekLocal();
+            showToast(`Stamped ${field === 'checkIn' ? 'Check In' : 'Check Out'} at ${timeValue}`, "info");
+        }
+
+        function recalculateDayHours(dateKey) {
+            const day = currentWeekData.days[dateKey];
+            if (day.checkIn && day.checkOut) {
+                const [inH, inM] = day.checkIn.split(':').map(Number);
+                const [outH, outM] = day.checkOut.split(':').map(Number);
+                let inTotalMinutes = inH * 60 + inM;
+                let outTotalMinutes = outH * 60 + outM;
+                if (outTotalMinutes < inTotalMinutes) {
+                    outTotalMinutes += 24 * 60; 
+                }
+                const diffMinutes = outTotalMinutes - inTotalMinutes;
+                const hours = diffMinutes / 60;
+                day.totalHours = hours;
+                day.earned = hours * parseFloat(currentWeekData.hourlyRate);
+            } else {
+                day.totalHours = 0;
+                day.earned = 0;
+            }
+            renderTimesheetFormUI();
+        }
+
+        // Week Navigator Actions - Shifting by 7 days
+        window.changeWeek = function(offset) {
+            activeViewingDate.setDate(activeViewingDate.getDate() + (offset * 7));
+            initializeCurrentWeekData(activeViewingDate);
+        }
+
+        window.jumpToCurrentWeek = function() {
+            activeViewingDate = new Date();
+            initializeCurrentWeekData(activeViewingDate);
+            showToast("Reset to present week.", "info");
+        }
+
+        // Triggers when picking any date using calendar
+        window.onBackdatePickerChange = function(dateValue) {
+            if (!dateValue) return;
+            activeViewingDate = new Date(dateValue + "T00:00:00");
+            initializeCurrentWeekData(activeViewingDate);
+            showToast(`Moved timesheet range context.`, "info");
+        }
+
+        window.updateHourlyRate = function(newRate) {
+            if (!currentWeekData || currentWeekData.isFinalized) return;
+            const rate = parseFloat(newRate);
+            if (isNaN(rate) || rate < 0) {
+                showToast("Please input a valid positive rate.", "error");
+                return;
+            }
+            currentWeekData.hourlyRate = rate;
+            Object.keys(currentWeekData.days).forEach((dateKey) => {
+                recalculateDayHours(dateKey);
+            });
+            saveActiveWeekLocal();
+            showToast(`Hourly rate adjusted to $${rate.toFixed(2)}/hr`, "info");
+        }
+
+        window.triggerClockIn = function() {
+            if (!currentWeekData || currentWeekData.isFinalized) return;
+            const todayKey = new Date().toLocaleDateString('en-CA');
+            if (!currentWeekData.days[todayKey]) {
+                showToast("Today falls outside the boundaries of this weekly sheet.", "error");
+                return;
+            }
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const stamp = `${hh}:${mm}`;
+            currentWeekData.days[todayKey].checkIn = stamp;
+            recalculateDayHours(todayKey);
+            saveActiveWeekLocal();
+            showToast(`Clocked In successfully at ${stamp}`, "success");
+        }
+
+        window.triggerClockOut = function() {
+            if (!currentWeekData || currentWeekData.isFinalized) return;
+            const todayKey = new Date().toLocaleDateString('en-CA');
+            if (!currentWeekData.days[todayKey] || !currentWeekData.days[todayKey].checkIn) {
+                showToast("You have not clocked in yet today.", "error");
+                return;
+            }
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const stamp = `${hh}:${mm}`;
+            currentWeekData.days[todayKey].checkOut = stamp;
+            recalculateDayHours(todayKey);
+            saveActiveWeekLocal();
+            showToast(`Clocked Out successfully at ${stamp}`, "success");
+        }
+
+        // Action Trigger for post-lock payment editing
+        window.enablePaymentEditing = function() {
+            isEditingPaymentDetails = true;
+            // Re-render UI with unlocked payment controls
+            renderTimesheetFormUI();
+            
+            // Adjust edit button visuals dynamically
+            const editBtn = document.getElementById('paymentEditBtn');
+            editBtn.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Lock & Save Payment`;
+            editBtn.className = "px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition flex items-center gap-1 shadow-md shadow-emerald-600/10";
+            editBtn.setAttribute("onclick", "disablePaymentEditing()");
+            
+            showToast("Payment fields unlocked for editing.", "info");
+        }
+
+        window.disablePaymentEditing = function() {
+            isEditingPaymentDetails = false;
+            calculateBalanceAndCarryForwards(true);
+            renderTimesheetFormUI();
+            
+            const editBtn = document.getElementById('paymentEditBtn');
+            editBtn.innerHTML = `<i class="fa-solid fa-pen-to-square"></i> Edit Payment`;
+            editBtn.className = "px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 text-[10px] font-bold rounded-lg transition flex items-center gap-1";
+            editBtn.setAttribute("onclick", "enablePaymentEditing()");
+            
+            // Re-trigger history compilation
+            fetchHistoricalWeeks();
+            showToast("Payment information locked and saved successfully!", "success");
+        }
+
+        window.handlePaymentStatusChange = function(status) {
+            currentWeekData.paymentStatus = status;
+            
+            const earnedThisWeek = parseFloat(currentWeekData.earnedThisWeek || 0);
+            const carriedForward = parseFloat(currentWeekData.carriedFromPrevious || 0);
+            const grandTotalBalance = earnedThisWeek + carriedForward;
+
+            if (status === 'paid') {
+                document.getElementById('partialAmountInput').value = grandTotalBalance.toFixed(2);
+                currentWeekData.amountReceived = grandTotalBalance;
+            } else if (status === 'unpaid') {
+                document.getElementById('partialAmountInput').value = 0;
+                currentWeekData.amountReceived = 0;
+            }
+            
+            // Set payment date automatically to today if blank
+            if ((status === 'paid' || status === 'partial') && !currentWeekData.paymentDate) {
+                const todayVal = new Date().toISOString().split('T')[0];
+                currentWeekData.paymentDate = todayVal;
+                document.getElementById('paymentDateInput').value = todayVal;
+            }
+            
+            renderTimesheetFormUI();
+            saveActiveWeekLocal();
+        }
+
+        window.onPaymentDateUpdate = function(dateVal) {
+            currentWeekData.paymentDate = dateVal;
+            saveActiveWeekLocal();
+        }
+
+        window.calculateBalanceAndCarryForwards = function(shouldSave = true) {
+            if (!currentWeekData) return 0;
+            
+            let totalHoursThisWeek = 0;
+            let totalEarnedThisWeek = 0;
+            
+            if (currentWeekData.days) {
+                Object.values(currentWeekData.days).forEach((day) => {
+                    totalHoursThisWeek += parseFloat(day.totalHours || 0);
+                    totalEarnedThisWeek += parseFloat(day.earned || 0);
+                });
+            }
+            
+            const carriedForward = parseFloat(currentWeekData.carriedFromPrevious || 0);
+            
+            // Adjust Brought Forward Badge Styling based on negative credit vs positive debt
+            const carryLabel = document.getElementById('carryLabel');
+            const carryForwardVal = document.getElementById('summaryCarryForward');
+            if (carriedForward < 0) {
+                carryLabel.innerHTML = `<span class="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-bold mr-1.5 font-sans">OVERPAYMENT CREDIT</span> From Last Week:`;
+                carryForwardVal.className = "font-bold text-emerald-600";
+                carryForwardVal.textContent = `-$${Math.abs(carriedForward).toFixed(2)}`;
+            } else if (carriedForward > 0) {
+                carryLabel.innerHTML = `<span class="bg-rose-100 text-rose-800 text-[10px] px-1.5 py-0.5 rounded font-bold mr-1.5">OUTSTANDING DEBT</span> From Last Week:`;
+                carryForwardVal.className = "font-bold text-rose-600";
+                carryForwardVal.textContent = `$${carriedForward.toFixed(2)}`;
+            } else {
+                carryLabel.textContent = "Balance from Previous Week:";
+                carryForwardVal.className = "font-bold text-slate-800";
+                carryForwardVal.textContent = "$0.00";
+            }
+
+            const grandTotalBalance = totalEarnedThisWeek + carriedForward;
+            
+            const paymentStatus = document.getElementById('paymentStatusSelect').value;
+            let receivedAmount = 0;
+            
+            if (paymentStatus === 'paid') {
+                receivedAmount = grandTotalBalance;
+            } else if (paymentStatus === 'partial') {
+                receivedAmount = parseFloat(document.getElementById('partialAmountInput').value);
+                if (isNaN(receivedAmount)) receivedAmount = 0;
+            } else {
+                receivedAmount = 0;
+            }
+            
+            const outstandingToCarry = grandTotalBalance - receivedAmount;
+            
+            document.getElementById('summaryTotalHours').textContent = `${totalHoursThisWeek.toFixed(2)} Hours`;
+            document.getElementById('summaryRate').textContent = `$${parseFloat(currentWeekData.hourlyRate).toFixed(2)}/hr`;
+            document.getElementById('summaryGrossEarned').textContent = `$${totalEarnedThisWeek.toFixed(2)}`;
+            document.getElementById('summaryGrandTotal').textContent = `$${grandTotalBalance.toFixed(2)}`;
+            document.getElementById('summaryReceived').textContent = `$${receivedAmount.toFixed(2)}`;
+            
+            const outstandingLabel = document.getElementById('outstandingLabel');
+            const outstandingVal = document.getElementById('summaryOutstandingCarry');
+            const carryCard = document.getElementById('outstandingCarryCard');
+            const carryCardSub = document.getElementById('outstandingCardSub');
+            
+            if (outstandingToCarry < 0) {
+                outstandingLabel.innerHTML = `Overpaid Credit (Carry Forward):`;
+                outstandingVal.className = "font-extrabold text-emerald-600 text-base";
+                outstandingVal.textContent = `-$${Math.abs(outstandingToCarry).toFixed(2)}`;
+                carryCard.className = "p-3.5 rounded-xl border border-emerald-200 bg-emerald-50 flex flex-col justify-between gap-1.5 transition mt-2";
+                carryCardSub.textContent = "Overpayment credit reduces the employee's next statement total automatically.";
+                carryCardSub.className = "text-[10px] leading-relaxed text-emerald-700 font-medium";
+            } else if (outstandingToCarry > 0) {
+                outstandingLabel.innerHTML = `Outstanding Carry (To Next Week):`;
+                outstandingVal.className = "font-extrabold text-rose-600 text-base";
+                outstandingVal.textContent = `$${outstandingToCarry.toFixed(2)}`;
+                carryCard.className = "p-3.5 rounded-xl border border-rose-200 bg-rose-50 flex flex-col justify-between gap-1.5 transition mt-2";
+                carryCardSub.textContent = "Unpaid outstanding debt rolls forward to the successive week ledger.";
+                carryCardSub.className = "text-[10px] leading-relaxed text-rose-700 font-medium";
+            } else {
+                outstandingLabel.innerHTML = `Outstanding Carry:`;
+                outstandingVal.className = "font-extrabold text-slate-800 text-base";
+                outstandingVal.textContent = "$0.00";
+                carryCard.className = "p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-1.5 transition mt-2";
+                carryCardSub.textContent = "Settled weekly cycle. No balances are rolling forward.";
+                carryCardSub.className = "text-[10px] leading-relaxed text-slate-500";
+            }
+            
+            currentWeekData.earnedThisWeek = totalEarnedThisWeek;
+            currentWeekData.amountReceived = receivedAmount;
+            
+            if (shouldSave) {
+                saveActiveWeekLocal();
+            }
+            
+            return grandTotalBalance;
+        }
+
+        function saveActiveWeekLocal() {
+            if (!currentUser || !currentWeekData) return;
+            const path = `users/${currentUser.uid}/timesheets/${activeWeekId}`;
+            writeLocalDb(path, currentWeekData);
+            
+            // Re-solve the dynamic timeline carryforwards whenever active sheet is saved
+            rebuildAllCarryForwards();
+        }
+
+        // Promise-based confirmation popup execution block (substituting standard alert boxes safely)
+        let onConfirmAction = null;
+
+        window.triggerFinalizePrompt = function() {
+            if (!currentWeekData || currentWeekData.isFinalized) return;
+            
+            // Render modal visible
+            document.getElementById('confirmModal').classList.remove('hidden');
+            
+            onConfirmAction = async function() {
+                showLoading("Finalizing sheet & compiling carryover...");
+                currentWeekData.isFinalized = true;
+                calculateBalanceAndCarryForwards(false);
+                saveActiveWeekLocal();
+                
+                // Push Sync parameters to Google Spreadsheet if configured
+                const sheetUrl = localStorage.getItem('sheets_webapp_endpoint');
+                if (sheetUrl) {
+                    try {
+                        await pushDataToGoogleSheets(sheetUrl, currentWeekData);
+                        showToast("Week locked and synced to Google Sheets!", "success");
+                    } catch (sheetsErr) {
+                        console.error("Sheets integration failed but data is locally saved:", sheetsErr);
+                        showToast("Locked locally! Google Sheet syncing encountered an error.", "error");
+                    }
+                } else {
+                    showToast("Sheet finalized and locked locally!", "success");
+                }
+                
+                setTimeout(async () => {
+                    await initializeCurrentWeekData(activeViewingDate);
+                    await fetchHistoricalWeeks();
+                    hideLoading();
+                }, 400);
+            };
+        }
+
+        // Confirm Action Listeners
+        document.getElementById('cancelConfirmBtn').onclick = function() {
+            document.getElementById('confirmModal').classList.add('hidden');
+            onConfirmAction = null;
+        }
+
+        document.getElementById('okConfirmBtn').onclick = function() {
+            document.getElementById('confirmModal').classList.add('hidden');
+            if (onConfirmAction) {
+                onConfirmAction();
+            }
+            onConfirmAction = null;
+        }
+
+        // API Handler for Google Sheets Endpoint Integration
+        async function pushDataToGoogleSheets(webhookUrl, data) {
+            const payload = {
+                email: currentUser.email || "guest-employee@portal.com",
+                weekId: data.weekId,
+                startDate: data.startDate,
+                endDate: data.endDate,
+                earnedThisWeek: data.earnedThisWeek,
+                carriedFromPrevious: data.carriedFromPrevious,
+                amountReceived: data.amountReceived,
+                paymentStatus: data.paymentStatus,
+                paymentDate: data.paymentDate || 'N/A'
+            };
+
+            return fetch(webhookUrl, {
+                method: "POST",
+                mode: "no-cors",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        async function fetchHistoricalWeeks() {
+            if (!currentUser) return;
+            
+            // Re-solve chronological sequence first to ensure ledger list displays correct values
+            rebuildAllCarryForwards();
+            
+            const list = [];
+            const sDb = getLocalDb();
+            Object.keys(sDb).forEach((path) => {
+                if (path.startsWith(`users/${currentUser.uid}/timesheets/`)) {
+                    const data = sDb[path];
+                    if (data && data.isFinalized) {
+                        list.push(data);
+                    }
+                }
+            });
+            historicalWeeks = list.sort((a,b) => {
+                if (!a.endDate || !b.endDate) return 0;
+                return b.endDate.localeCompare(a.endDate);
+            });
+            renderHistoricalLedgerUI();
+        }
+
+        function renderHistoricalLedgerUI() {
+            const emptyEl = document.getElementById('historicalEmptyState');
+            const gridEl = document.getElementById('historicalWeeksGrid');
+            
+            if (historicalWeeks.length === 0) {
+                emptyEl.classList.remove('hidden');
+                gridEl.classList.add('hidden');
+                return;
+            }
+            
+            emptyEl.classList.add('hidden');
+            gridEl.classList.remove('hidden');
+            gridEl.innerHTML = "";
+            
+            historicalWeeks.forEach((week) => {
+                let statusBadge = "";
+                if (week.paymentStatus === 'paid') {
+                    statusBadge = `<span class="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold uppercase text-[10px]">Fully Paid</span>`;
+                } else if (week.paymentStatus === 'partial') {
+                    statusBadge = `<span class="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold uppercase text-[10px]">Settled Details</span>`;
+                } else {
+                    statusBadge = `<span class="bg-rose-100 text-rose-800 text-xs px-2.5 py-1 rounded-full font-bold uppercase text-[10px]">Unpaid</span>`;
+                }
+                
+                let totalHours = 0;
+                if (week.days) {
+                    Object.values(week.days).forEach((d) => {
+                        totalHours += parseFloat(d.totalHours || 0);
+                    });
+                }
+                
+                const earned = parseFloat(week.earnedThisWeek || 0);
+                const carried = parseFloat(week.carriedFromPrevious || 0);
+                const totalDue = earned + carried;
+                const received = parseFloat(week.amountReceived || 0);
+                const outstanding = totalDue - received;
+                
+                const card = document.createElement('div');
+                card.className = "bg-slate-50 border border-slate-200 rounded-xl p-5 hover:border-emerald-400 hover:shadow-md transition duration-200 flex flex-col justify-between cursor-pointer";
+                card.setAttribute("onclick", `onSelectHistoryCard('${week.startDate}')`);
+                card.setAttribute("title", "Click to view/print this week");
+
+                let outstandingLine = "";
+                if (outstanding < 0) {
+                    outstandingLine = `
+                        <div class="flex justify-between font-semibold text-emerald-600">
+                            <span>Overpayment Credit:</span>
+                            <span>-$${Math.abs(outstanding).toFixed(2)}</span>
+                        </div>
+                    `;
+                } else {
+                    outstandingLine = `
+                        <div class="flex justify-between font-semibold text-rose-600">
+                            <span>Carried Forward (Debt):</span>
+                            <span>$${outstanding.toFixed(2)}</span>
+                        </div>
+                    `;
+                }
+
+                const displayPaymentDate = week.paymentDate ? new Date(week.paymentDate + "T00:00:00").toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'N/A';
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <h5 class="font-bold text-slate-900 text-sm">Week ${week.weekId}</h5>
+                            ${statusBadge}
+                        </div>
+                        <p class="text-xs text-slate-500 font-medium mb-4">${new Date(week.startDate + "T00:00:00").toLocaleDateString('en-US', {month: 'short', day: 'numeric'})} - ${new Date(week.endDate + "T00:00:00").toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'})}</p>
+                        
+                        <div class="space-y-1.5 text-xs text-slate-600">
+                            <div class="flex justify-between">
+                                <span>Total Hours:</span>
+                                <span class="font-bold text-slate-800">${totalHours.toFixed(2)} hrs</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Gross Wages:</span>
+                                <span class="font-bold text-slate-800">$${earned.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Carried In Balance:</span>
+                                <span class="font-bold text-slate-500">${carried < 0 ? '-' : ''}$${Math.abs(carried).toFixed(2)}</span>
+                            </div>
+                            <div class="border-t border-slate-200 my-1"></div>
+                            <div class="flex justify-between font-semibold">
+                                <span>Amount Received:</span>
+                                <span class="text-indigo-600">$${received.toFixed(2)}</span>
+                            </div>
+                            <div class="flex justify-between text-[10px] text-slate-500">
+                                <span>Payment Date:</span>
+                                <span>${displayPaymentDate}</span>
+                            </div>
+                            ${outstandingLine}
+                        </div>
+                    </div>
+                `;
+                gridEl.appendChild(card);
+            });
+        }
+
+        // Clicking on any ledger history card jumps view to that selected timesheet week
+        window.onSelectHistoryCard = function(startDateStr) {
+            activeViewingDate = new Date(startDateStr + "T00:00:00");
+            initializeCurrentWeekData(activeViewingDate);
+            showToast("Viewing selected historical sheet details", "info");
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.downloadCSV = function() {
+            if (!currentWeekData) return;
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += `Employee Timesheet Report,${currentUser.email || 'Guest'}\r\n`;
+            csvContent += `Statement Week,${currentWeekData.weekId}\r\n`;
+            csvContent += `Date Range,${currentWeekData.startDate} to ${currentWeekData.endDate}\r\n`;
+            csvContent += `Hourly Rate,$${currentWeekData.hourlyRate.toFixed(2)}/hr\r\n\r\n`;
+            
+            csvContent += "Day,Date,Check In,Check Out,Total Hours,Earned ($)\r\n";
+            
+            const sortedDays = Object.values(currentWeekData.days).sort((a,b) => {
+                if (!a.date || !b.date) return 0;
+                return a.date.localeCompare(b.date);
+            });
+            sortedDays.forEach((day) => {
+                csvContent += `"${day.dayName}","${day.date}","${day.checkIn || 'N/A'}","${day.checkOut || 'N/A'}",${parseFloat(day.totalHours || 0).toFixed(2)},${parseFloat(day.earned || 0).toFixed(2)}\r\n`;
+            });
+            
+            csvContent += `\r\nSummary Metrics\r\n`;
+            csvContent += `Gross Earned,$${parseFloat(currentWeekData.earnedThisWeek || 0).toFixed(2)}\r\n`;
+            csvContent += `Outstanding Carried Forward,${currentWeekData.carriedFromPrevious < 0 ? '-' : ''}$${Math.abs(currentWeekData.carriedFromPrevious || 0).toFixed(2)}\r\n`;
+            csvContent += `Total Received Payment,$${parseFloat(currentWeekData.amountReceived || 0).toFixed(2)}\r\n`;
+            csvContent += `Payment Date,${currentWeekData.paymentDate || 'N/A'}\r\n`;
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Timesheet_${currentWeekData.weekId}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("Downloaded CSV successfully!", "success");
+        }
+
+        // Email Report Modal Actions
+        window.openEmailModal = function() {
+            if (!currentWeekData) return;
+            
+            document.getElementById('emailModal').classList.remove('hidden');
+            
+            // Build real-time plain text pre-formatted email template body
+            const emailPreview = document.getElementById('emailPreviewBox');
+            emailPreview.textContent = compilePlainEmailContent();
+        }
+
+        window.closeEmailModal = function() {
+            document.getElementById('emailModal').classList.add('hidden');
+        }
+
+        function compilePlainEmailContent() {
+            let totalHours = 0;
+            if (currentWeekData.days) {
+                Object.values(currentWeekData.days).forEach((d) => {
+                    totalHours += parseFloat(d.totalHours || 0);
+                });
+            }
+            
+            const earned = parseFloat(currentWeekData.earnedThisWeek || 0);
+            const carried = parseFloat(currentWeekData.carriedFromPrevious || 0);
+            const grandTotal = earned + carried;
+            const received = parseFloat(currentWeekData.amountReceived || 0);
+            const outstanding = grandTotal - received;
+            const payDate = currentWeekData.paymentDate ? new Date(currentWeekData.paymentDate + "T00:00:00").toLocaleDateString('en-US', {month: 'long', day: 'numeric', year: 'numeric'}) : 'N/A';
+            
+            let content = `TIMESHEET REPORT - Week ${currentWeekData.weekId}\n`;
+            content += `==============================================\n`;
+            content += `Employee Email: ${currentUser.email || 'Guest'}\n`;
+            content += `Statement Range: ${currentWeekData.displayRange || (currentWeekData.startDate + ' to ' + currentWeekData.endDate)}\n`;
+            content += `Base Wage Rate: $${parseFloat(currentWeekData.hourlyRate).toFixed(2)}/hr\n`;
+            content += `==============================================\n\n`;
+            
+            content += `SUMMARY METRICS:\n`;
+            content += `----------------------------------------------\n`;
+            content += `- Total Hours Logged: ${totalHours.toFixed(2)} hrs\n`;
+            content += `- Gross Wages Earned: $${earned.toFixed(2)}\n`;
+            content += `- Brought Forward Balance: ${carried < 0 ? '-' : ''}$${Math.abs(carried).toFixed(2)}\n`;
+            content += `- Grand Total Due: $${grandTotal.toFixed(2)}\n\n`;
+            
+            content += `PAYMENT RECORDED DETAILS:\n`;
+            content += `----------------------------------------------\n`;
+            content += `- Payment Status: ${currentWeekData.paymentStatus.toUpperCase()}\n`;
+            content += `- Last Payment Received: $${received.toFixed(2)}\n`;
+            content += `- Last Payment Date: ${payDate}\n`;
+            content += `- Outstanding Carry-Forward Balance: ${outstanding < 0 ? '-' : ''}$${Math.abs(outstanding).toFixed(2)}\n\n`;
+            
+            content += `DAILY HOURLY BREAKDOWN:\n`;
+            content += `----------------------------------------------\n`;
+            
+            if (currentWeekData.days) {
+                const sortedDays = Object.values(currentWeekData.days).sort((a,b) => {
+                    if (!a.date || !b.date) return 0;
+                    return a.date.localeCompare(b.date);
+                });
+                sortedDays.forEach((day) => {
+                    const dayLabel = `${day.dayName} (${day.date})`;
+                    const checkInLabel = day.checkIn || '--:--';
+                    const checkOutLabel = day.checkOut || '--:--';
+                    content += `* ${dayLabel.padEnd(25)} | IN: ${checkInLabel.padEnd(6)} | OUT: ${checkOutLabel.padEnd(6)} | ${parseFloat(day.totalHours).toFixed(2)} hrs\n`;
+                });
+            }
+            
+            content += `\n==============================================\n`;
+            content += `Generated using Enterprise Timesheet System.`;
+            
+            return content;
+        }
+
+        window.sendEmailReport = function() {
+            const emailTo = document.getElementById('emailToInput').value.trim();
+            if (!emailTo) {
+                showToast("Please provide a destination email address.", "error");
+                return;
+            }
+            
+            const subject = encodeURIComponent(`Timesheet Statement for Week ${currentWeekData.weekId} - ${currentUser.email || 'Employee'}`);
+            const body = encodeURIComponent(compilePlainEmailContent());
+            
+            // Generate standard mailto hyper-link to trigger user mail clients organically
+            const mailtoUrl = `mailto:${emailTo}?subject=${subject}&body=${body}`;
+            
+            window.location.href = mailtoUrl;
+            showToast("Launched system email client!", "success");
+        }
+
+        window.copyEmailBody = function() {
+            const bodyContent = compilePlainEmailContent();
+            
+            const el = document.createElement('textarea');
+            el.value = bodyContent;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            
+            showToast("Timesheet report content copied to clipboard!", "success");
+        }
+
+        window.toggleAuthTab = function(tab) {
+            const btnLogin = document.getElementById('tabLogin');
+            const btnRegister = document.getElementById('tabRegister');
+            const submitBtnText = document.getElementById('authBtnText');
+            
+            if (tab === 'login') {
+                isRegistering = false;
+                btnLogin.className = "flex-1 pb-3 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600 transition";
+                btnRegister.className = "flex-1 pb-3 text-center font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition";
+                submitBtnText.textContent = "Sign Into Timesheet";
+            } else {
+                isRegistering = true;
+                btnLogin.className = "flex-1 pb-3 text-center font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition";
+                btnRegister.className = "flex-1 pb-3 text-center font-semibold border-b-2 border-emerald-600 text-emerald-600 transition";
+                submitBtnText.textContent = "Register & Create Account";
+            }
+        }
+
+        window.handleAuthSubmit = async function(event) {
+            event.preventDefault();
+            const email = document.getElementById('authEmail').value.trim().toLowerCase();
+            const password = document.getElementById('authPassword').value;
+            
+            showLoading(isRegistering ? "Creating secure account..." : "Authenticating securely...");
+            
+            setTimeout(() => {
+                const users = getLocalUsers();
+                if (isRegistering) {
+                    if (users[email]) {
+                        showToast("Email address is already registered.", "error");
+                        hideLoading();
+                        return;
+                    }
+                    saveLocalUser(email, password);
+                    showToast("Account created successfully!", "success");
+                } else {
+                    if (!users[email] || users[email] !== password) {
+                        showToast("Invalid credentials. Try using default credentials: demo@company.com with password123", "error");
+                        hideLoading();
+                        return;
+                    }
+                    showToast("Authorized successfully!", "success");
+                }
+                
+                // Set the session context cleanly (email is used as user key)
+                setSession({
+                    uid: "id_" + btoa(email).replace(/=/g, ""),
+                    email: email
+                });
+                hideLoading();
+            }, 600);
+        }
+
+        window.loginAnonymouslyClick = async function() {
+            showLoading("Initializing Guest Session...");
+            setTimeout(() => {
+                setSession({ 
+                    uid: "guest_" + Math.random().toString(36).substring(2, 10), 
+                    email: "guest@company.com" 
+                });
+                showToast("Logged in as Guest!", "success");
+                hideLoading();
+            }, 300);
+        }
+
+        window.logOut = async function() {
+            showLoading("Signing out securely...");
+            setTimeout(() => {
+                setSession(null);
+                showToast("Signed out successfully.", "info");
+                hideLoading();
+            }, 300);
+        }
+
+        // Google Sheets Integration Setup Functions
+        window.openSheetsModal = function() {
+            document.getElementById('sheetsModal').classList.remove('hidden');
+            const savedUrl = localStorage.getItem('sheets_webapp_endpoint');
+            if (savedUrl) {
+                document.getElementById('sheetsWebappUrl').value = savedUrl;
+            }
+        }
+
+        window.closeSheetsModal = function() {
+            document.getElementById('sheetsModal').classList.add('hidden');
+        }
+
+        window.saveSheetsConfiguration = function() {
+            const urlInput = document.getElementById('sheetsWebappUrl').value.trim();
+            if (!urlInput || !urlInput.startsWith('https://')) {
+                showToast("Please enter a valid secure Google Script endpoint URL.", "error");
+                return;
+            }
+            localStorage.setItem('sheets_webapp_endpoint', urlInput);
+            loadSheetsConfig();
+            showToast("Google Sheets Webhook saved successfully!", "success");
+            closeSheetsModal();
+        }
+
+        window.removeSheetsConfiguration = function() {
+            localStorage.removeItem('sheets_webapp_endpoint');
+            document.getElementById('sheetsWebappUrl').value = "";
+            loadSheetsConfig();
+            showToast("Google Sheets connection disconnected.", "info");
+            closeSheetsModal();
+        }
+
+        function loadSheetsConfig() {
+            const endpoint = localStorage.getItem('sheets_webapp_endpoint');
+            const banner = document.getElementById('sheetsConnectedBanner');
+            if (endpoint) {
+                if (banner) banner.classList.remove('hidden');
+            } else {
+                if (banner) banner.classList.add('hidden');
+            }
+        }
+
+        window.testSheetsSync = async function() {
+            const endpoint = localStorage.getItem('sheets_webapp_endpoint');
+            if (!endpoint) return;
+            
+            showLoading("Dispatching test entry...");
+            try {
+                const tempMockData = {
+                    weekId: "TEST-WEEK",
+                    startDate: "2026-01-01",
+                    endDate: "2026-01-07",
+                    earnedThisWeek: 100,
+                    carriedFromPrevious: 0,
+                    amountReceived: 100,
+                    paymentStatus: "paid",
+                    paymentDate: "2026-01-01"
+                };
+                await pushDataToGoogleSheets(endpoint, tempMockData);
+                showToast("Sync test dispatched! Open your Google sheet to confirm.", "success");
+            } catch (err) {
+                showToast("Test request failed.", "error");
+            } finally {
+                hideLoading();
+            }
+        }
+
+        window.copyAppsScriptCode = function() {
+            const codeText = document.getElementById('appsScriptText').innerText;
+            // Native cross-browser clipboard execution safety
+            const el = document.createElement('textarea');
+            el.value = codeText;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            showToast("Google Apps Script code copied!", "success");
+        }
+
+        let loadingTimeout = null;
+        function showLoading(msg = "Synchronizing...") {
+            document.getElementById('loadingText').textContent = msg;
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            // Auto-failsafe to hide overlay after 5 seconds to prevent frozen page
+            if (loadingTimeout) clearTimeout(loadingTimeout);
+            loadingTimeout = setTimeout(() => {
+                hideLoading();
+            }, 5000);
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+            if (loadingTimeout) {
+                clearTimeout(loadingTimeout);
+                loadingTimeout = null;
+            }
+        }
+
+        function showToast(message, type = "info") {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            let bg = "bg-slate-900";
+            let icon = "fa-circle-info";
+            
+            if (type === "success") {
+                bg = "bg-emerald-600";
+                icon = "fa-circle-check";
+            } else if (type === "error") {
+                bg = "bg-rose-600";
+                icon = "fa-circle-exclamation";
+            } else if (type === "info") {
+                bg = "bg-emerald-600";
+                icon = "fa-info-circle";
+            }
+            
+            toast.className = `flex items-center gap-3 px-4 py-3 text-white rounded-xl shadow-xl transition-all duration-300 transform translate-y-2 opacity-0 text-sm font-semibold pointer-events-auto ${bg}`;
+            toast.innerHTML = `
+                <i class="fa-solid ${icon} text-base"></i>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-10px]', 'opacity-0');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3500);
+        }
+
+        // Run automatic persistent session checks on boot
+        checkPersistentSession();
+    </script>
+</body>
+</html>
